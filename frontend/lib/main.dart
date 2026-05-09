@@ -3,10 +3,20 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/core/constants.dart';
+import 'package:doc_scanner/providers/auth_provider.dart';
+import 'package:doc_scanner/ui/screens/login_screen.dart';
+import 'package:doc_scanner/ui/screens/home_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const DocScannerApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
+      child: const DocScannerApp(),
+    ),
+  );
 }
 
 class DocScannerApp extends StatelessWidget {
@@ -18,13 +28,43 @@ class DocScannerApp extends StatelessWidget {
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const SplashScreen(),
+      home: const AuthWrapper(),
     );
   }
 }
 
-class SplashScreen extends StatelessWidget {
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context);
+
+    if (auth.isLoading && !auth.isAuthenticated) {
+      return const SplashScreen();
+    }
+
+    if (auth.isAuthenticated) {
+      return const HomeScreen();
+    }
+
+    return const LoginScreen();
+  }
+}
+
+class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Auto-login check is handled by AuthProvider/AuthWrapper
+  }
 
   @override
   Widget build(BuildContext context) {
