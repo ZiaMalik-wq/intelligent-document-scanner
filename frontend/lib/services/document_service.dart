@@ -29,12 +29,18 @@ class DocumentService {
       request.fields['parent_document_id'] = parentDocumentId.toString();
     }
 
-    // Determine content type based on extension
+    // Determine content type based on extension (support common image formats)
     final extension = file.path.split('.').last.toLowerCase();
-    String mimeType = 'image/jpeg';
+    String mimeType = 'application/octet-stream';
     if (extension == 'png') mimeType = 'image/png';
     if (extension == 'webp') mimeType = 'image/webp';
     if (extension == 'pdf') mimeType = 'application/pdf';
+    if (extension == 'jpg' || extension == 'jpeg') mimeType = 'image/jpeg';
+    if (extension == 'tif' || extension == 'tiff') mimeType = 'image/tiff';
+    if (extension == 'bmp') mimeType = 'image/bmp';
+    if (extension == 'gif') mimeType = 'image/gif';
+    if (extension == 'heic') mimeType = 'image/heic';
+    if (extension == 'svg') mimeType = 'image/svg+xml';
 
     request.files.add(
       await http.MultipartFile.fromPath(

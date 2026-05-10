@@ -16,7 +16,19 @@ import os
 
 router = APIRouter()
 
-SUPPORTED_FORMATS = ["image/jpeg", "image/png", "image/webp", "application/pdf", "image/tiff"]
+SUPPORTED_FORMATS = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/tiff",
+    "image/tif",
+    "image/bmp",
+    "image/gif",
+    "image/heic",
+    "image/x-ms-bmp",
+    "application/pdf",
+]
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 @router.get("/", response_model=List[DocumentSchema])
