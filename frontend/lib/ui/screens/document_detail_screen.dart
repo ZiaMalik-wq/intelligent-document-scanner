@@ -140,12 +140,11 @@ class DocumentDetailScreen extends StatelessWidget {
         backgroundColor: Colors.black,
         title: Text(document['filename'] ?? 'Document'),
         actions: [
-          if (!_isPdf)
-            IconButton(
-              icon: const Icon(Icons.text_fields, color: Colors.white),
-              tooltip: 'Extract Text',
-              onPressed: () => _extractText(context),
-            ),
+          IconButton(
+            icon: const Icon(Icons.text_fields, color: Colors.white),
+            tooltip: 'Extract Text',
+            onPressed: () => _extractText(context),
+          ),
           if (!_isPdf)
             IconButton(
               icon: const Icon(Icons.edit, color: Colors.white),
