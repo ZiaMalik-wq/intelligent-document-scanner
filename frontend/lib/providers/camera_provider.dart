@@ -33,6 +33,25 @@ class CameraProvider with ChangeNotifier {
     }
   }
 
+  Future<void> disposeCamera() async {
+    if (_controller != null) {
+      try {
+        await _controller!.dispose();
+      } catch (e) {
+        debugPrint("Camera dispose error: $e");
+      }
+      _controller = null;
+      _isInitialized = false;
+      _flashMode = FlashMode.off;
+      notifyListeners();
+    }
+  }
+
+  Future<void> reinitialize() async {
+    await disposeCamera();
+    await initialize();
+  }
+
   Future<void> toggleFlash() async {
     if (!_isInitialized) return;
 

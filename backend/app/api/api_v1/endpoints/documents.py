@@ -1,18 +1,23 @@
 import os
 import uuid
 import shutil
+from datetime import datetime
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.api import deps
 from app.database.session import get_db
 from app.models.document import Document
 from app.schemas.document import Document as DocumentSchema
 from app.core.config import settings
-from app.services.pdf_service import generate_searchable_pdf
-from fastapi.responses import FileResponse
-import os
+from app.services.pdf_service import generate_searchable_pdf, generate_batch_pdf
+
+class BatchPdfRequest(BaseModel):
+    document_ids: List[int]
+    delete_source: bool = True
 
 router = APIRouter()
 
@@ -38,10 +43,15 @@ def list_documents(
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
-    """
-    Retrieve all documents for the current user.
-    """
-    documents = db.query(Document).filter(Document.user_id == current_user.id).order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    """Retrieve all documents for the current user with absolute URLs."""
+    documents = (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     
     # Add url field to each document
     results = []
@@ -65,9 +75,7 @@ def search_documents(
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
-    """
-    Search documents by filename or OCR text.
-    """
+    """Search documents by filename or OCR text content."""
     query = db.query(Document).filter(Document.user_id == current_user.id)
     if q:
         query = query.filter(
@@ -85,10 +93,8 @@ async def upload_document(
     parent_document_id: int = None,
 ) -> Any:
     """
-    Upload a document.
-    
-    If parent_document_id is provided, this document is treated as a crop of the parent.
-    Filters applied to this document will use the parent's base_processed_path if available.
+    Upload a new document or a crop child.
+    If parent_document_id is provided, the document is linked for lineage tracking.
     """
     # Validate content type
     if file.content_type not in SUPPORTED_FORMATS:
@@ -154,6 +160,61 @@ async def upload_document(
     document_data["url"] = f"/media/uploads/{unique_filename}"
     
     return document_data
+
+@router.post("/{document_id}/image", response_model=DocumentSchema)
+async def update_document_image(
+    document_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Replace the original image of an existing document. Used for manual cropping in edit mode.
+    """
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_ext = os.path.splitext(file.filename)[1]
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not save file: {e}"
+        )
+
+    # Delete old files to save space
+    if document.original_path and os.path.exists(document.original_path):
+        try: os.remove(document.original_path)
+        except: pass
+    if document.base_processed_path and os.path.exists(document.base_processed_path):
+        try: os.remove(document.base_processed_path)
+        except: pass
+    if document.processed_path and os.path.exists(document.processed_path):
+        try: os.remove(document.processed_path)
+        except: pass
+
+    # Update DB record
+    document.original_path = file_path
+    document.base_processed_path = None
+    document.processed_path = None
+    document.status = "uploaded"
+    
+    db.commit()
+    db.refresh(document)
+    
+    doc_data = DocumentSchema.model_validate(document).model_dump()
+    doc_data["url"] = f"/media/uploads/{unique_filename}"
+    return doc_data
 
 @router.get("/{id}", response_model=DocumentSchema)
 def get_document(
@@ -241,4 +302,91 @@ async def download_pdf(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate PDF: {e}"
+        )
+
+@router.post("/batch/pdf")
+async def generate_batch_pdf_endpoint(
+    *,
+    db: Session = Depends(get_db),
+    current_user = Depends(deps.get_current_user),
+    request: BatchPdfRequest,
+) -> Any:
+    """
+    Generate a single multi-page PDF from a list of document IDs.
+    Creates a new Document record for the PDF and removes the individual source documents.
+    """
+    if not request.document_ids:
+        raise HTTPException(status_code=400, detail="No document IDs provided")
+        
+    documents = db.query(Document).filter(
+        Document.id.in_(request.document_ids), 
+        Document.user_id == current_user.id
+    ).all()
+    
+    if not documents:
+        raise HTTPException(status_code=404, detail="Documents not found")
+        
+    # Order documents based on the input list order
+    doc_dict = {doc.id: doc for doc in documents}
+    ordered_docs = [doc_dict[doc_id] for doc_id in request.document_ids if doc_id in doc_dict]
+    
+    # Collect paths (use processed if available, otherwise original)
+    image_paths = []
+    for doc in ordered_docs:
+        path = doc.processed_path if doc.processed_path else doc.original_path
+        if os.path.exists(path):
+            image_paths.append(path)
+            
+    if not image_paths:
+        raise HTTPException(status_code=404, detail="No valid images found for the given documents")
+        
+    batch_id = uuid.uuid4().hex[:8]
+    pdf_filename = f"batch_{batch_id}.pdf"
+    pdf_path = os.path.join(settings.PROCESSED_DIR, pdf_filename)
+
+    try:
+        generate_batch_pdf(image_paths, pdf_path)
+        
+        # Create a Document record for the PDF so it appears in the gallery
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%b%d_%H%M")
+        pdf_doc = Document(
+            user_id=current_user.id,
+            filename=f"Scan_{timestamp}_{len(image_paths)}pg.pdf",
+            mime_type="application/pdf",
+            original_path=pdf_path,
+            processed_path=pdf_path,
+            status="completed"
+        )
+        db.add(pdf_doc)
+        
+        # Delete the individual source documents only if requested
+        if request.delete_source:
+            for doc in ordered_docs:
+                # Remove physical files
+                if doc.original_path and os.path.exists(doc.original_path):
+                    try:
+                        os.remove(doc.original_path)
+                    except Exception:
+                        pass
+                if doc.processed_path and doc.processed_path != doc.original_path and os.path.exists(doc.processed_path):
+                    try:
+                        os.remove(doc.processed_path)
+                    except Exception:
+                        pass
+                db.delete(doc)
+        
+        db.commit()
+        db.refresh(pdf_doc)
+        
+        return {
+            "id": pdf_doc.id,
+            "url": f"/media/processed/{pdf_filename}",
+            "filename": pdf_doc.filename
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate batch PDF: {e}"
         )

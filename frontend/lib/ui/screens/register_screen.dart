@@ -17,7 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  bool _obscureText = true;
+  final bool _obscureText = true;
 
   void _register() async {
     if (_passwordController.text != _confirmPasswordController.text) {

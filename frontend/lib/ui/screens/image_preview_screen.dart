@@ -9,11 +9,13 @@ import 'package:doc_scanner/core/constants.dart';
 class ImagePreviewScreen extends StatefulWidget {
   final String imagePath;
   final bool enableAutoCrop;
+  final bool returnCroppedPath;
 
   const ImagePreviewScreen({
     super.key,
     required this.imagePath,
     this.enableAutoCrop = false,
+    this.returnCroppedPath = false,
   });
 
   @override
@@ -41,53 +43,9 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     super.initState();
     _processedImagePath = widget.imagePath;
     _originalImagePath = widget.imagePath; // Store original for reference
-    // Attempt auto-crop/flatten only when explicitly enabled (camera capture).
-    if (widget.enableAutoCrop) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _autoCropAndFlatten();
-      });
-    }
   }
 
-  Future<void> _autoCropAndFlatten() async {
-    // Run auto-crop once when the preview screen opens (for camera captures)
-    if (_processedImagePath == null) return;
-    if (_isProcessing) return;
 
-    try {
-      setState(() => _isProcessing = true);
-
-      // 1. Upload image if not already uploaded to obtain a document id
-      if (_documentId == null) {
-        final doc = await _documentService.uploadDocument(
-          File(_processedImagePath!),
-        );
-        _documentId = doc['id'];
-      }
-
-      // 2. Detect edges
-      final edgeResult = await _scannerService.detectEdges(_documentId!);
-      final corners = edgeResult['corners'];
-
-      // If corners found, apply perspective correction automatically
-      if (corners != null && corners is List && corners.isNotEmpty) {
-        final perspectiveResult = await _scannerService.correctPerspective(
-          _documentId!,
-          corners,
-        );
-
-        setState(() {
-          _remoteUrl = perspectiveResult['url'];
-          _isRemote = true;
-          _selectedFilter = 'original';
-        });
-      }
-    } catch (e) {
-      debugPrint('Auto-crop error: $e');
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
 
   void _applyFilter(String filter) async {
     if (filter == 'original') {
@@ -142,58 +100,7 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     }
   }
 
-  Future<void> _flattenImage() async {
-    setState(() => _isProcessing = true);
-    try {
-      // 1. Upload if needed
-      if (_documentId == null) {
-        final doc = await _documentService.uploadDocument(
-          File(_processedImagePath!),
-          parentDocumentId:
-              _parentDocumentId, // Pass parent for lineage tracking
-        );
-        _documentId = doc['id'];
-      }
 
-      // 2. Detect edges
-      final edgeResult = await _scannerService.detectEdges(_documentId!);
-      final corners = edgeResult['corners'];
-
-      // 3. Correct perspective
-      final perspectiveResult = await _scannerService.correctPerspective(
-        _documentId!,
-        corners,
-      );
-
-      setState(() {
-        _remoteUrl = perspectiveResult['url'];
-        _isRemote = true;
-        _isProcessing = false;
-        _selectedFilter =
-            'original'; // Reset filter to original of the new flat image
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Image flattened successfully"),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Flatten error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Flattening failed: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
 
   Future<void> _cropImage() async {
     final croppedFile = await ImageCropper().cropImage(
@@ -212,53 +119,30 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     );
 
     if (croppedFile != null) {
-      // If this is the first crop (no document uploaded yet), upload the original image as parent
-      if (_documentId == null && _parentDocumentId == null) {
-        try {
-          setState(() => _isProcessing = true);
-
-          // Upload the original uncropped image to establish parent lineage
-          final originalDoc = await _documentService.uploadDocument(
-            File(_originalImagePath!),
-          );
-          _parentDocumentId = originalDoc['id'];
-
-          debugPrint('Uploaded original image as parent: $_parentDocumentId');
-        } catch (e) {
-          debugPrint('Error uploading original image: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to establish parent lineage: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            setState(() => _isProcessing = false);
-          }
-          return;
+      // If in batch mode (returnCroppedPath), just pop with the cropped file path
+      if (widget.returnCroppedPath) {
+        if (mounted) {
+          Navigator.pop(context, croppedFile.path);
         }
-      } else if (_documentId != null) {
-        // If already uploaded, use current document as parent for the new crop
-        _parentDocumentId = _documentId;
+        return;
       }
 
+      // In manual crop mode, we don't upload the original image to establish lineage anymore.
+      // This prevents the "double image" problem where both original and cropped appear in gallery.
+      // We just update the local path and only upload the final result when saving/filtering.
       setState(() {
         _processedImagePath = croppedFile.path;
         _documentId = null; // Reset ID because file changed
         _isRemote = false;
         _selectedFilter = 'original';
         _isProcessing = false;
+        _hasUnsavedChanges = true; // Mark as changed so 'Save' button shows
       });
     }
   }
 
-  Future<bool> _onWillPop() async {
-    if (!_hasUnsavedChanges) {
-      return true; // Allow navigation if no changes
-    }
-
-    // Show confirmation dialog
-    final shouldDiscard = await showDialog<bool>(
+  Future<bool?> _showDiscardDialog() async {
+    return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) => AlertDialog(
@@ -278,45 +162,103 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         ],
       ),
     );
-
-    return shouldDiscard ?? false;
   }
 
-  void _saveAndClose() {
-    _hasUnsavedChanges = false; // Mark as saved
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Document saved successfully"),
-        backgroundColor: Colors.green,
-      ),
-    );
+  Future<void> _saveAndClose() async {
+    setState(() => _isProcessing = true);
+
+    try {
+      // 1. If not yet uploaded (no filters applied, just raw photo or crop), upload now
+      if (_documentId == null) {
+        final doc = await _documentService.uploadDocument(
+          File(_processedImagePath!),
+        );
+        _documentId = doc['id'];
+      }
+
+      // 2. Mark as completed (optional: could call a 'complete' endpoint if needed, 
+      // but uploading and processing is enough for it to show up in gallery)
+      
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _hasUnsavedChanges = false;
+        });
+
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surfaceColor,
+              title: const Text('Document Saved!', style: TextStyle(color: Colors.white)),
+              content: const Text(
+                'Your document has been processed and saved successfully.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).popUntil((route) => route.isFirst); // Go to Home
+                  },
+                  child: const Text('Go Home', style: TextStyle(color: Colors.white54)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(); // Go back to Camera
+                  },
+                  child: const Text('Scan Another', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint("Save error: $e");
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to save: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldDiscard = await _showDiscardDialog();
+        if (shouldDiscard == true && context.mounted) {
+          // Cleanup: Delete any documents created during this session if discarding
+          if (_documentId != null) {
+            _documentService.deleteDocument(_documentId!).catchError((e) => debugPrint("Discard cleanup error: $e"));
+          }
+          if (_parentDocumentId != null && _parentDocumentId != _documentId) {
+            _documentService.deleteDocument(_parentDocumentId!).catchError((e) => debugPrint("Parent discard cleanup error: $e"));
+          }
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         backgroundColor: AppTheme.backgroundColor,
         appBar: AppBar(
           title: const Text("Preview"),
           actions: [
             IconButton(
-              icon: const Icon(Icons.auto_fix_normal, color: Colors.white),
-              tooltip: 'AI Flatten',
-              onPressed: _flattenImage,
-            ),
-            IconButton(
               icon: const Icon(Icons.crop_rotate, color: Colors.white),
               onPressed: _cropImage,
             ),
-            if (_hasUnsavedChanges)
-              IconButton(
-                icon: const Icon(Icons.check, color: Colors.green),
-                tooltip: 'Save Changes',
-                onPressed: _saveAndClose,
-              ),
+            IconButton(
+              icon: const Icon(Icons.check, color: Colors.green),
+              tooltip: 'Save Changes',
+              onPressed: _isProcessing ? null : _saveAndClose,
+            ),
           ],
         ),
         body: Column(

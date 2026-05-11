@@ -6,7 +6,7 @@ import 'package:doc_scanner/services/auth_service.dart';
 class AuthProvider with ChangeNotifier {
   User? _user;
   String? _token;
-  bool _isLoading = false;
+  bool _isLoading = true;
   final _storage = const FlutterSecureStorage();
   final _authService = AuthService();
 
@@ -64,6 +64,7 @@ class AuthProvider with ChangeNotifier {
         await _storage.delete(key: 'token');
       }
     }
+    _isLoading = false;
     notifyListeners();
   }
 
