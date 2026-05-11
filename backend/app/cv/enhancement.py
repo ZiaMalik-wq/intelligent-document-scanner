@@ -266,39 +266,25 @@ def _threshold(enhanced: np.ndarray, params: dict):
 # -------------------------------------------------------------------
 
 def _enhance_grayscale(image, params):
+    """
+    Clean grayscale: simple luminance conversion with light contrast
+    enhancement. Visually distinct from magic (which does LAB shadow 
+    removal + color preservation).
+    """
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    shadow_free = _remove_shadow(
-        gray,
-        params["blur_kernel"]
-    )
-
-    gamma_corrected = _correct_gamma(
-        shadow_free,
-        params["gamma"]
-    )
-
+    # Light CLAHE for readability (lower clip than magic's aggressive processing)
     enhanced = _apply_clahe(
-        gamma_corrected,
-        params["clahe_clip"],
-        params["clahe_grid"]
+        gray,
+        clip=1.5,
+        grid=(8, 8)
     )
 
-    blurred = cv2.GaussianBlur(
-        enhanced,
-        (0, 0),
-        sigmaX=1.2
-    )
+    # Gentle gamma to brighten slightly
+    enhanced = _correct_gamma(enhanced, 1.05)
 
-    enhanced = cv2.addWeighted(
-        enhanced,
-        1.25,
-        blurred,
-        -0.25,
-        0
-    )
-
+    # Normalize to use full dynamic range
     enhanced = cv2.normalize(
         enhanced,
         enhanced.copy(),
@@ -308,6 +294,7 @@ def _enhance_grayscale(image, params):
     )
 
     return enhanced
+
 
 
 # -------------------------------------------------------------------
