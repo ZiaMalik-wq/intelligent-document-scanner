@@ -43,53 +43,9 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     super.initState();
     _processedImagePath = widget.imagePath;
     _originalImagePath = widget.imagePath; // Store original for reference
-    // Attempt auto-crop/flatten only when explicitly enabled (camera capture).
-    if (widget.enableAutoCrop) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _autoCropAndFlatten();
-      });
-    }
   }
 
-  Future<void> _autoCropAndFlatten() async {
-    // Run auto-crop once when the preview screen opens (for camera captures)
-    if (_processedImagePath == null) return;
-    if (_isProcessing) return;
 
-    try {
-      setState(() => _isProcessing = true);
-
-      // 1. Upload image if not already uploaded to obtain a document id
-      if (_documentId == null) {
-        final doc = await _documentService.uploadDocument(
-          File(_processedImagePath!),
-        );
-        _documentId = doc['id'];
-      }
-
-      // 2. Detect edges
-      final edgeResult = await _scannerService.detectEdges(_documentId!);
-      final corners = edgeResult['corners'];
-
-      // If corners found, apply perspective correction automatically
-      if (corners != null && corners is List && corners.isNotEmpty) {
-        final perspectiveResult = await _scannerService.correctPerspective(
-          _documentId!,
-          corners,
-        );
-
-        setState(() {
-          _remoteUrl = perspectiveResult['url'];
-          _isRemote = true;
-          _selectedFilter = 'original';
-        });
-      }
-    } catch (e) {
-      debugPrint('Auto-crop error: $e');
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
 
   void _applyFilter(String filter) async {
     if (filter == 'original') {
@@ -144,58 +100,7 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     }
   }
 
-  Future<void> _flattenImage() async {
-    setState(() => _isProcessing = true);
-    try {
-      // 1. Upload if needed
-      if (_documentId == null) {
-        final doc = await _documentService.uploadDocument(
-          File(_processedImagePath!),
-          parentDocumentId:
-              _parentDocumentId, // Pass parent for lineage tracking
-        );
-        _documentId = doc['id'];
-      }
 
-      // 2. Detect edges
-      final edgeResult = await _scannerService.detectEdges(_documentId!);
-      final corners = edgeResult['corners'];
-
-      // 3. Correct perspective
-      final perspectiveResult = await _scannerService.correctPerspective(
-        _documentId!,
-        corners,
-      );
-
-      setState(() {
-        _remoteUrl = perspectiveResult['url'];
-        _isRemote = true;
-        _isProcessing = false;
-        _selectedFilter =
-            'original'; // Reset filter to original of the new flat image
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Image flattened successfully"),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Flatten error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Flattening failed: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
 
   Future<void> _cropImage() async {
     final croppedFile = await ImageCropper().cropImage(
@@ -336,11 +241,6 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         appBar: AppBar(
           title: const Text("Preview"),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.auto_fix_normal, color: Colors.white),
-              tooltip: 'AI Flatten',
-              onPressed: _flattenImage,
-            ),
             IconButton(
               icon: const Icon(Icons.crop_rotate, color: Colors.white),
               onPressed: _cropImage,
