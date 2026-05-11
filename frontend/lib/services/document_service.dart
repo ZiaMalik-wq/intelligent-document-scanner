@@ -86,7 +86,7 @@ class DocumentService {
     }
   }
 
-  Future<Map<String, dynamic>> generateBatchPdf(List<int> documentIds) async {
+  Future<Map<String, dynamic>> generateBatchPdf(List<int> documentIds, {bool deleteSource = true}) async {
     final token = await _getToken();
     final response = await http.post(
       Uri.parse('${AppConstants.baseUrl}/documents/batch/pdf'),
@@ -94,7 +94,10 @@ class DocumentService {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
-      body: json.encode({'document_ids': documentIds}),
+      body: json.encode({
+        'document_ids': documentIds,
+        'delete_source': deleteSource,
+      }),
     );
 
     if (response.statusCode == 200) {

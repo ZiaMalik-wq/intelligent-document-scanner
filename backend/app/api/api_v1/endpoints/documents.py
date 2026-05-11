@@ -17,6 +17,7 @@ import os
 
 class BatchPdfRequest(BaseModel):
     document_ids: List[int]
+    delete_source: bool = True
 
 router = APIRouter()
 
@@ -303,20 +304,21 @@ async def generate_batch_pdf_endpoint(
         )
         db.add(pdf_doc)
         
-        # Delete the individual source documents (they were temporary)
-        for doc in ordered_docs:
-            # Remove physical files
-            if doc.original_path and os.path.exists(doc.original_path):
-                try:
-                    os.remove(doc.original_path)
-                except Exception:
-                    pass
-            if doc.processed_path and doc.processed_path != doc.original_path and os.path.exists(doc.processed_path):
-                try:
-                    os.remove(doc.processed_path)
-                except Exception:
-                    pass
-            db.delete(doc)
+        # Delete the individual source documents only if requested
+        if request.delete_source:
+            for doc in ordered_docs:
+                # Remove physical files
+                if doc.original_path and os.path.exists(doc.original_path):
+                    try:
+                        os.remove(doc.original_path)
+                    except Exception:
+                        pass
+                if doc.processed_path and doc.processed_path != doc.original_path and os.path.exists(doc.processed_path):
+                    try:
+                        os.remove(doc.processed_path)
+                    except Exception:
+                        pass
+                db.delete(doc)
         
         db.commit()
         db.refresh(pdf_doc)

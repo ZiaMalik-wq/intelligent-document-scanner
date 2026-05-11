@@ -70,6 +70,35 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _exportBatchPdf() async {
     if (_selectedIds.isEmpty) return;
 
+    // Ask user if they want to keep or delete originals
+    final bool? deleteSource = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceColor,
+          title: const Text('Export PDF', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'Do you want to delete the original source documents after generating the PDF?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false), // Keep originals
+              child: const Text('Keep Originals', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true), // Delete originals
+              child: const Text('Delete Originals', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (deleteSource == null) return; // User cancelled
+
+    if (!mounted) return;
+
     // Show loading
     showDialog(
       context: context,
@@ -83,7 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
           .map<int>((doc) => doc['id'])
           .toList();
 
-      final result = await _documentService.generateBatchPdf(documentIds);
+      final result = await _documentService.generateBatchPdf(
+        documentIds,
+        deleteSource: deleteSource,
+      );
       
       if (mounted) {
         Navigator.pop(context); // Close loading
@@ -97,6 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _isSelectionMode = false;
           _selectedIds.clear();
         });
+        _fetchDocuments(); // Refresh the list
       }
     } catch (e) {
       if (mounted) {
