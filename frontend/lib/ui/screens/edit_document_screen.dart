@@ -75,10 +75,8 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
     }
   }
 
-  Future<bool> _onWillPop() async {
-    if (!_hasUnsavedChanges) return true;
-
-    final shouldDiscard = await showDialog<bool>(
+  Future<bool?> _showDiscardDialog() async {
+    return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) => AlertDialog(
@@ -90,7 +88,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true), // Yes, discard (just leave)
+            onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Discard', style: TextStyle(color: Colors.red)),
           ),
           TextButton(
@@ -103,8 +101,6 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
         ],
       ),
     );
-
-    return shouldDiscard ?? false;
   }
 
   void _saveAndClose() {
@@ -118,8 +114,15 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldDiscard = await _showDiscardDialog();
+        if (shouldDiscard == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         backgroundColor: AppTheme.backgroundColor,
         appBar: AppBar(
@@ -142,7 +145,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10),
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 10),
                   ],
                 ),
                 child: ClipRRect(
@@ -266,7 +269,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primaryColor.withOpacity(0.2) : AppTheme.surfaceColor,
+            color: isSelected ? AppTheme.primaryColor.withValues(alpha: 0.2) : AppTheme.surfaceColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: isSelected ? AppTheme.primaryColor : Colors.white10),
           ),

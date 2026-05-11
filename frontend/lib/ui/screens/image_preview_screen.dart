@@ -262,13 +262,8 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     }
   }
 
-  Future<bool> _onWillPop() async {
-    if (!_hasUnsavedChanges) {
-      return true; // Allow navigation if no changes
-    }
-
-    // Show confirmation dialog
-    final shouldDiscard = await showDialog<bool>(
+  Future<bool?> _showDiscardDialog() async {
+    return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) => AlertDialog(
@@ -288,8 +283,6 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         ],
       ),
     );
-
-    return shouldDiscard ?? false;
   }
 
   void _saveAndClose() {
@@ -305,8 +298,15 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldDiscard = await _showDiscardDialog();
+        if (shouldDiscard == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         backgroundColor: AppTheme.backgroundColor,
         appBar: AppBar(

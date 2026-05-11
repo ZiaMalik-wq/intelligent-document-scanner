@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _documents = [];
   bool _isLoading = true;
   bool _isSelectionMode = false;
-  Set<int> _selectedIds = {};
+  final Set<int> _selectedIds = {};
 
   @override
   void initState() {
@@ -91,13 +91,6 @@ class _HomeScreenState extends State<HomeScreen> {
           SnackBar(
             content: Text("PDF Generated: ${result['filename']}"),
             backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: "View",
-              textColor: Colors.white,
-              onPressed: () {
-                // TODO: Handle opening the PDF URL
-              },
-            ),
           ),
         );
         setState(() {
@@ -244,7 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           child: Container(
             decoration: BoxDecoration(
-              color: isSelected ? AppTheme.primaryColor.withOpacity(0.3) : AppTheme.surfaceColor,
+              color: isSelected ? AppTheme.primaryColor.withValues(alpha: 0.3) : AppTheme.surfaceColor,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isSelected ? AppTheme.primaryColor : Colors.white10,

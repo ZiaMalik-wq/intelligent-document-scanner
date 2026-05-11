@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/services/document_service.dart';
-import 'package:doc_scanner/core/constants.dart';
 import 'package:doc_scanner/services/scanner_service.dart';
 import 'package:doc_scanner/ui/screens/image_preview_screen.dart';
 
@@ -209,7 +208,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.white24),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 12),
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 12),
                         ],
                       ),
                       child: ClipRRect(
