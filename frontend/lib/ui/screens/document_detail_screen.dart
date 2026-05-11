@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/services/document_service.dart';
+import 'package:doc_scanner/ui/screens/edit_document_screen.dart';
 
 class DocumentDetailScreen extends StatelessWidget {
   final Map<String, dynamic> document;
@@ -61,6 +62,25 @@ class DocumentDetailScreen extends StatelessWidget {
         backgroundColor: Colors.black,
         title: Text(document['filename']),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit, color: Colors.white),
+            tooltip: 'Edit Image',
+            onPressed: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EditDocumentScreen(
+                    document: document,
+                    initialImageUrl: imageUrl,
+                  ),
+                ),
+              );
+              // If edited, pop to home screen to refresh
+              if (result == true) {
+                if (context.mounted) Navigator.pop(context, true);
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             onPressed: () => _deleteDocument(context),
