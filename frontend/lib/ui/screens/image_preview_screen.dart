@@ -127,42 +127,16 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         return;
       }
 
-      // If this is the first crop (no document uploaded yet), upload the original image as parent
-      if (_documentId == null && _parentDocumentId == null) {
-        try {
-          setState(() => _isProcessing = true);
-
-          // Upload the original uncropped image to establish parent lineage
-          final originalDoc = await _documentService.uploadDocument(
-            File(_originalImagePath!),
-          );
-          _parentDocumentId = originalDoc['id'];
-
-          debugPrint('Uploaded original image as parent: $_parentDocumentId');
-        } catch (e) {
-          debugPrint('Error uploading original image: $e');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Failed to establish parent lineage: $e'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            setState(() => _isProcessing = false);
-          }
-          return;
-        }
-      } else if (_documentId != null) {
-        // If already uploaded, use current document as parent for the new crop
-        _parentDocumentId = _documentId;
-      }
-
+      // In manual crop mode, we don't upload the original image to establish lineage anymore.
+      // This prevents the "double image" problem where both original and cropped appear in gallery.
+      // We just update the local path and only upload the final result when saving/filtering.
       setState(() {
         _processedImagePath = croppedFile.path;
         _documentId = null; // Reset ID because file changed
         _isRemote = false;
         _selectedFilter = 'original';
         _isProcessing = false;
+        _hasUnsavedChanges = true; // Mark as changed so 'Save' button shows
       });
     }
   }
@@ -190,39 +164,67 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     );
   }
 
-  void _saveAndClose() {
-    _hasUnsavedChanges = false; // Mark as saved
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.surfaceColor,
-          title: const Text('Document Saved!', style: TextStyle(color: Colors.white)),
-          content: const Text(
-            'Your document has been processed and saved successfully.',
-            style: TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).popUntil((route) => route.isFirst); // Go to Home
-              },
-              child: const Text('Go Home', style: TextStyle(color: Colors.white54)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to Camera
-              },
-              child: const Text('Scan Another', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.bold)),
-            ),
-          ],
+  Future<void> _saveAndClose() async {
+    setState(() => _isProcessing = true);
+
+    try {
+      // 1. If not yet uploaded (no filters applied, just raw photo or crop), upload now
+      if (_documentId == null) {
+        final doc = await _documentService.uploadDocument(
+          File(_processedImagePath!),
         );
-      },
-    );
+        _documentId = doc['id'];
+      }
+
+      // 2. Mark as completed (optional: could call a 'complete' endpoint if needed, 
+      // but uploading and processing is enough for it to show up in gallery)
+      
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _hasUnsavedChanges = false;
+        });
+
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              backgroundColor: AppTheme.surfaceColor,
+              title: const Text('Document Saved!', style: TextStyle(color: Colors.white)),
+              content: const Text(
+                'Your document has been processed and saved successfully.',
+                style: TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).popUntil((route) => route.isFirst); // Go to Home
+                  },
+                  child: const Text('Go Home', style: TextStyle(color: Colors.white54)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(); // Go back to Camera
+                  },
+                  child: const Text('Scan Another', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint("Save error: $e");
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to save: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   @override
@@ -233,6 +235,13 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
         if (didPop) return;
         final shouldDiscard = await _showDiscardDialog();
         if (shouldDiscard == true && context.mounted) {
+          // Cleanup: Delete any documents created during this session if discarding
+          if (_documentId != null) {
+            _documentService.deleteDocument(_documentId!).catchError((e) => debugPrint("Discard cleanup error: $e"));
+          }
+          if (_parentDocumentId != null && _parentDocumentId != _documentId) {
+            _documentService.deleteDocument(_parentDocumentId!).catchError((e) => debugPrint("Parent discard cleanup error: $e"));
+          }
           Navigator.of(context).pop();
         }
       },
@@ -245,12 +254,11 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
               icon: const Icon(Icons.crop_rotate, color: Colors.white),
               onPressed: _cropImage,
             ),
-            if (_hasUnsavedChanges)
-              IconButton(
-                icon: const Icon(Icons.check, color: Colors.green),
-                tooltip: 'Save Changes',
-                onPressed: _saveAndClose,
-              ),
+            IconButton(
+              icon: const Icon(Icons.check, color: Colors.green),
+              tooltip: 'Save Changes',
+              onPressed: _isProcessing ? null : _saveAndClose,
+            ),
           ],
         ),
         body: Column(

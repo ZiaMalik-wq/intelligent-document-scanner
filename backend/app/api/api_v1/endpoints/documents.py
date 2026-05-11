@@ -1,9 +1,12 @@
 import os
 import uuid
 import shutil
+from datetime import datetime
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.api import deps
 from app.database.session import get_db
@@ -11,9 +14,6 @@ from app.models.document import Document
 from app.schemas.document import Document as DocumentSchema
 from app.core.config import settings
 from app.services.pdf_service import generate_searchable_pdf, generate_batch_pdf
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-import os
 
 class BatchPdfRequest(BaseModel):
     document_ids: List[int]
@@ -43,10 +43,15 @@ def list_documents(
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
-    """
-    Retrieve all documents for the current user.
-    """
-    documents = db.query(Document).filter(Document.user_id == current_user.id).order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    """Retrieve all documents for the current user with absolute URLs."""
+    documents = (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     
     # Add url field to each document
     results = []
@@ -70,9 +75,7 @@ def search_documents(
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
-    """
-    Search documents by filename or OCR text.
-    """
+    """Search documents by filename or OCR text content."""
     query = db.query(Document).filter(Document.user_id == current_user.id)
     if q:
         query = query.filter(
@@ -90,10 +93,8 @@ async def upload_document(
     parent_document_id: int = None,
 ) -> Any:
     """
-    Upload a document.
-    
-    If parent_document_id is provided, this document is treated as a crop of the parent.
-    Filters applied to this document will use the parent's base_processed_path if available.
+    Upload a new document or a crop child.
+    If parent_document_id is provided, the document is linked for lineage tracking.
     """
     # Validate content type
     if file.content_type not in SUPPORTED_FORMATS:

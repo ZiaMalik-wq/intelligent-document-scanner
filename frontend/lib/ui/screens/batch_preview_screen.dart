@@ -55,6 +55,13 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
       );
       return;
     }
+    
+    // Cleanup: If the page was already uploaded, delete it from backend
+    final docId = _docIds[index];
+    if (docId != null) {
+      _documentService.deleteDocument(docId).catchError((e) => debugPrint("Remove page cleanup error: $e"));
+    }
+
     setState(() {
       _pages.removeAt(index);
       _docIds.removeAt(index);
@@ -218,9 +225,29 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) {
-          Navigator.pop(context, _pages);
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        
+        final shouldDiscard = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Discard Batch?'),
+            content: const Text('Are you sure you want to discard this entire scan batch? All uploaded pages will be deleted.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Discard', style: TextStyle(color: Colors.red))),
+            ],
+          ),
+        );
+
+        if (shouldDiscard == true && mounted) {
+          // Cleanup: Delete all documents created for this batch
+          for (final id in _docIds) {
+            if (id != null) {
+              _documentService.deleteDocument(id).catchError((e) => debugPrint("Batch discard cleanup error: $e"));
+            }
+          }
+          Navigator.pop(context);
         }
       },
       child: Scaffold(

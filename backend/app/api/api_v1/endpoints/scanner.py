@@ -1,3 +1,5 @@
+import os
+import cv2
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -7,8 +9,6 @@ from app.database.session import get_db
 from app.models.document import Document
 from app.cv.enhancement import enhance_image
 from app.core.config import settings
-import cv2
-import os
 
 router = APIRouter()
 
@@ -22,14 +22,9 @@ async def enhance(
     document_type: str = "typed",
 ) -> Any:
     """
-    Apply image enhancement filters (magic, grayscale, bw, receipt) based on document type.
-    
-    Document Types:
-    - typed: For printed/typed documents
-    - handwritten: For handwritten documents  
-    - other: For mixed content
-    
-    Filters are always applied to the base processed image to avoid filter-on-filter artifacts.
+    Applies image enhancement filters based on document type.
+    Modes: magic, grayscale, bw, receipt.
+    Types: typed, handwritten, other.
     """
     document = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
     if not document:
@@ -39,9 +34,7 @@ async def enhance(
     if document_type in ["typed", "handwritten", "other"]:
         document.document_type = document_type
     
-    # Always apply filters to the base processed image (perspective-corrected)
     # Priority: parent's base_processed_path > own base_processed_path > original_path
-    # This prevents filter-on-filter artifacts even when user crops filtered images
     input_path = None
     
     # Check parent document's base_processed_path (for cropped images)

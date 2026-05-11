@@ -30,8 +30,6 @@ class ScannerService {
     }
   }
 
-  }
-
   Future<Map<String, dynamic>> extractText(
     int documentId, {
     String lang = "eng",

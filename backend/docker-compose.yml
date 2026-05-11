@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: doc_scanner_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./sql_app.db
+      - TESSERACT_PATH=/usr/bin/tesseract
+      - PROJECT_NAME=IntelligentDocumentScanner
+    volumes:
+      - ./uploads:/backend/uploads
+      - ./processed:/backend/processed
+      - ./sql_app.db:/backend/sql_app.db
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
