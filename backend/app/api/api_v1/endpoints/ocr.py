@@ -86,10 +86,11 @@ def _extract_text_from_pdf(pdf_path: str, lang: str = "eng", engine: str = "tess
         mat = fitz.Matrix(300 / 72, 300 / 72)  # 300 DPI
         pix = page.get_pixmap(matrix=mat)
         
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            pix.save(tmp.name)
-            tmp_path = tmp.name
+        # Save to temporary file — close it first (Windows locks open files)
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        pix.save(tmp_path)
         
         try:
             # Run OCR on the page image
