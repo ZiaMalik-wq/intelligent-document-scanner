@@ -70,7 +70,7 @@ class ScannerService {
   Future<Map<String, dynamic>> extractText(
     int documentId, {
     String lang = "eng",
-    String engine = "tesseract",
+    String engine = "auto",
   }) async {
     final token = await _getToken();
     final response = await http.post(

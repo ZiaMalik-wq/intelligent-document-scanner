@@ -16,7 +16,7 @@ async def extract_text(
     current_user = Depends(deps.get_current_user),
     document_id: int,
     lang: str = "eng",
-    engine: str = "tesseract",
+    engine: str = "auto",
 ) -> Any:
     """
     Extract text from a document using OCR.
@@ -25,11 +25,19 @@ async def extract_text(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     
+    # Auto-select engine based on document type
+    selected_engine = engine
+    if engine == "auto":
+        if document.document_type == "handwritten":
+            selected_engine = "easyocr"
+        else:
+            selected_engine = "tesseract"
+            
     # Use the best available version of the image
     input_path = document.processed_path if document.processed_path else document.original_path
     
     try:
-        ocr_result = ocr_engine.extract_text(input_path, lang=lang, engine=engine)
+        ocr_result = ocr_engine.extract_text(input_path, lang=lang, engine=selected_engine)
         
         # Save full text to database
         document.ocr_text = ocr_result["text"]
@@ -41,7 +49,7 @@ async def extract_text(
             "document_id": document_id,
             "text": ocr_result["text"],
             "blocks": ocr_result["blocks"],
-            "engine": engine,
+            "engine": selected_engine,
             "lang": lang
         }
     except Exception as e:
