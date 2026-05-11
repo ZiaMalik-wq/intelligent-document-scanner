@@ -14,16 +14,35 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
   bool _isBatchMode = false;
   final List<String> _capturedImages = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<CameraProvider>(context, listen: false).initialize();
+      Provider.of<CameraProvider>(context, listen: false).reinitialize();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Dispose the camera when leaving this screen
+    Provider.of<CameraProvider>(context, listen: false).disposeCamera();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final camera = Provider.of<CameraProvider>(context, listen: false);
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      camera.disposeCamera();
+    } else if (state == AppLifecycleState.resumed) {
+      camera.reinitialize();
+    }
   }
 
   @override
