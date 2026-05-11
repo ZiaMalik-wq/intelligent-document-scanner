@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/services/scanner_service.dart';

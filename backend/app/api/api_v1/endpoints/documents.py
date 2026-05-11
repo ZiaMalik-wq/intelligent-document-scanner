@@ -10,9 +10,13 @@ from app.database.session import get_db
 from app.models.document import Document
 from app.schemas.document import Document as DocumentSchema
 from app.core.config import settings
-from app.services.pdf_service import generate_searchable_pdf
+from app.services.pdf_service import generate_searchable_pdf, generate_batch_pdf
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 import os
+
+class BatchPdfRequest(BaseModel):
+    document_ids: List[int]
 
 router = APIRouter()
 
@@ -241,4 +245,55 @@ async def download_pdf(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate PDF: {e}"
+        )
+
+@router.post("/batch/pdf")
+async def generate_batch_pdf_endpoint(
+    *,
+    db: Session = Depends(get_db),
+    current_user = Depends(deps.get_current_user),
+    request: BatchPdfRequest,
+) -> Any:
+    """
+    Generate and download a single multi-page PDF from a list of document IDs.
+    """
+    if not request.document_ids:
+        raise HTTPException(status_code=400, detail="No document IDs provided")
+        
+    documents = db.query(Document).filter(
+        Document.id.in_(request.document_ids), 
+        Document.user_id == current_user.id
+    ).all()
+    
+    if not documents or len(documents) != len(request.document_ids):
+        raise HTTPException(status_code=404, detail="One or more documents not found")
+        
+    # Order documents based on the input list order
+    doc_dict = {doc.id: doc for doc in documents}
+    ordered_docs = [doc_dict[doc_id] for doc_id in request.document_ids if doc_id in doc_dict]
+    
+    # Collect paths
+    image_paths = []
+    for doc in ordered_docs:
+        # Use the best available version (processed/enhanced)
+        path = doc.processed_path if doc.processed_path else doc.original_path
+        if os.path.exists(path):
+            image_paths.append(path)
+            
+    if not image_paths:
+        raise HTTPException(status_code=404, detail="No valid images found for the given documents")
+        
+    pdf_filename = f"batch_{uuid.uuid4().hex[:8]}.pdf"
+    pdf_path = os.path.join(settings.PROCESSED_DIR, pdf_filename)
+
+    try:
+        generate_batch_pdf(image_paths, pdf_path)
+        return {
+            "url": f"/media/processed/{pdf_filename}",
+            "filename": pdf_filename
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate batch PDF: {e}"
         )

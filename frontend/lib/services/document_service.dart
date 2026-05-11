@@ -85,4 +85,22 @@ class DocumentService {
       throw Exception('Failed to delete document');
     }
   }
+
+  Future<Map<String, dynamic>> generateBatchPdf(List<int> documentIds) async {
+    final token = await _getToken();
+    final response = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/documents/batch/pdf'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({'document_ids': documentIds}),
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to generate batch PDF');
+    }
+  }
 }

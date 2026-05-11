@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/providers/camera_provider.dart';
 import 'package:doc_scanner/ui/screens/image_preview_screen.dart';
+import 'package:doc_scanner/ui/screens/batch_preview_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -14,6 +15,9 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> {
+  bool _isBatchMode = false;
+  final List<String> _capturedImages = [];
+
   @override
   void initState() {
     super.initState();
@@ -85,6 +89,42 @@ class _CameraScreenState extends State<CameraScreen> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    
+                    // Batch/Single Toggle
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GestureDetector(
+                            onTap: () => setState(() => _isBatchMode = false),
+                            child: Text(
+                              "Single",
+                              style: TextStyle(
+                                color: !_isBatchMode ? AppTheme.primaryColor : Colors.white70,
+                                fontWeight: !_isBatchMode ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () => setState(() => _isBatchMode = true),
+                            child: Text(
+                              "Batch",
+                              style: TextStyle(
+                                color: _isBatchMode ? AppTheme.primaryColor : Colors.white70,
+                                fontWeight: _isBatchMode ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 16),
 
                     // Row with gallery button and shutter
@@ -97,23 +137,33 @@ class _CameraScreenState extends State<CameraScreen> {
                             Icons.photo_library,
                             color: Colors.white,
                           ),
-                          tooltip: 'Pick from gallery',
+                          tooltip: _isBatchMode ? 'Add from gallery' : 'Pick from gallery',
                           onPressed: () async {
                             final picker = ImagePicker();
-                            final XFile? file = await picker.pickImage(
-                              source: ImageSource.gallery,
-                            );
-                            if (file != null) {
-                              if (!context.mounted) return;
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ImagePreviewScreen(
-                                    imagePath: file.path,
-                                    enableAutoCrop: false,
-                                  ),
-                                ),
+                            if (_isBatchMode) {
+                              // Multi-pick for batch mode
+                              final List<XFile> files = await picker.pickMultiImage();
+                              if (files.isNotEmpty) {
+                                setState(() {
+                                  _capturedImages.addAll(files.map((f) => f.path));
+                                });
+                              }
+                            } else {
+                              final XFile? file = await picker.pickImage(
+                                source: ImageSource.gallery,
                               );
+                              if (file != null) {
+                                if (!context.mounted) return;
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ImagePreviewScreen(
+                                      imagePath: file.path,
+                                      enableAutoCrop: false,
+                                    ),
+                                  ),
+                                );
+                              }
                             }
                           },
                         ),
@@ -125,15 +175,21 @@ class _CameraScreenState extends State<CameraScreen> {
                             final XFile? file = await camera.takePicture();
                             if (file != null) {
                               if (!context.mounted) return;
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ImagePreviewScreen(
-                                    imagePath: file.path,
-                                    enableAutoCrop: true,
+                              if (_isBatchMode) {
+                                setState(() {
+                                  _capturedImages.add(file.path);
+                                });
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ImagePreviewScreen(
+                                      imagePath: file.path,
+                                      enableAutoCrop: true,
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              }
                             }
                           },
                           child: Container(
@@ -154,6 +210,53 @@ class _CameraScreenState extends State<CameraScreen> {
                               ),
                             ),
                           ),
+                        ),
+                        
+                        const SizedBox(width: 24),
+                        
+                        // Done button for Batch mode
+                        SizedBox(
+                          width: 48,
+                          child: _isBatchMode && _capturedImages.isNotEmpty
+                              ? GestureDetector(
+                                  onTap: () async {
+                                    if (_capturedImages.isNotEmpty) {
+                                      final result = await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => BatchPreviewScreen(
+                                            imagePaths: _capturedImages,
+                                          ),
+                                        ),
+                                      );
+                                      if (result == true) {
+                                        if (context.mounted) Navigator.pop(context);
+                                      }
+                                    }
+                                  },
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      const Icon(Icons.check_circle, color: AppTheme.primaryColor, size: 48),
+                                      Positioned(
+                                        top: 0,
+                                        right: 0,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.red,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Text(
+                                            '${_capturedImages.length}',
+                                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox(),
                         ),
                       ],
                     ),

@@ -34,3 +34,33 @@ def create_simple_pdf(image_path: str, output_path: str):
         return output_path
     except Exception as e:
         raise Exception(f"Simple PDF generation failed: {e}")
+
+def generate_batch_pdf(image_paths: list[str], output_path: str):
+    """
+    Creates a multi-page PDF from a list of image paths.
+    """
+    if not image_paths:
+        raise Exception("No images provided for batch PDF generation.")
+        
+    try:
+        images = []
+        for path in image_paths:
+            img = Image.open(path)
+            if img.mode == 'RGBA':
+                img = img.convert('RGB')
+            images.append(img)
+            
+        # The first image saves the rest as subsequent pages
+        first_image = images[0]
+        other_images = images[1:]
+        
+        first_image.save(
+            output_path, 
+            "PDF", 
+            resolution=300.0, 
+            save_all=True, 
+            append_images=other_images
+        )
+        return output_path
+    except Exception as e:
+        raise Exception(f"Batch PDF generation failed: {e}")
