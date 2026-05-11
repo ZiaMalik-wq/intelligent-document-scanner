@@ -283,16 +283,19 @@ async def generate_batch_pdf_endpoint(
     if not image_paths:
         raise HTTPException(status_code=404, detail="No valid images found for the given documents")
         
-    pdf_filename = f"batch_{uuid.uuid4().hex[:8]}.pdf"
+    batch_id = uuid.uuid4().hex[:8]
+    pdf_filename = f"batch_{batch_id}.pdf"
     pdf_path = os.path.join(settings.PROCESSED_DIR, pdf_filename)
 
     try:
         generate_batch_pdf(image_paths, pdf_path)
         
         # Create a Document record for the PDF so it appears in the gallery
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%b%d_%H%M")
         pdf_doc = Document(
             user_id=current_user.id,
-            filename=f"Batch_{len(image_paths)}_pages.pdf",
+            filename=f"Scan_{timestamp}_{len(image_paths)}pg.pdf",
             mime_type="application/pdf",
             original_path=pdf_path,
             processed_path=pdf_path,

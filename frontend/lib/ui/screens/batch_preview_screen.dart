@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:doc_scanner/core/theme.dart';
+import 'package:doc_scanner/core/constants.dart';
 import 'package:doc_scanner/services/document_service.dart';
 import 'package:doc_scanner/services/scanner_service.dart';
 import 'package:doc_scanner/ui/screens/image_preview_screen.dart';
@@ -20,17 +21,25 @@ class BatchPreviewScreen extends StatefulWidget {
 class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   String _selectedFilter = 'original';
   bool _isProcessing = false;
+  bool _isApplyingFilter = false;
   String _progressText = '';
   int _currentPage = 0;
-  late List<String> _pages;
+  late List<String> _pages; // local file paths
   late PageController _pageController;
   final _scannerService = ScannerService();
   final _documentService = DocumentService();
+
+  // Backend state — uploaded document IDs and their filtered URLs
+  List<int?> _docIds = [];
+  List<String?> _filteredUrls = []; // server URLs for filtered images
+  bool _isUploaded = false;
 
   @override
   void initState() {
     super.initState();
     _pages = List.from(widget.imagePaths);
+    _docIds = List.filled(_pages.length, null);
+    _filteredUrls = List.filled(_pages.length, null);
     _pageController = PageController();
   }
 
@@ -49,6 +58,8 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
     }
     setState(() {
       _pages.removeAt(index);
+      _docIds.removeAt(index);
+      _filteredUrls.removeAt(index);
       if (_currentPage >= _pages.length) {
         _currentPage = _pages.length - 1;
       }
@@ -69,73 +80,109 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
     if (result != null && result is String) {
       setState(() {
         _pages[index] = result;
+        _docIds[index] = null; // Reset — needs re-upload since file changed
+        _filteredUrls[index] = null;
       });
     }
   }
 
-  /// Returns a ColorFilter matrix for client-side preview of the selected filter.
-  ColorFilter? _getPreviewFilter() {
-    switch (_selectedFilter) {
-      case 'bw':
-        // High-contrast B&W: desaturate then increase contrast
-        return const ColorFilter.matrix(<double>[
-          0.5, 0.5, 0.5, 0, -60,
-          0.5, 0.5, 0.5, 0, -60,
-          0.5, 0.5, 0.5, 0, -60,
-          0,   0,   0,   1,   0,
-        ]);
-      case 'grayscale':
-        // Standard grayscale using luminance weights
-        return const ColorFilter.matrix(<double>[
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0.2126, 0.7152, 0.0722, 0, 0,
-          0,      0,      0,      1, 0,
-        ]);
-      case 'magic':
-        // Boost contrast and saturation slightly
-        return const ColorFilter.matrix(<double>[
-          1.3, -0.1, -0.1, 0, 10,
-         -0.1,  1.3, -0.1, 0, 10,
-         -0.1, -0.1,  1.3, 0, 10,
-          0,    0,     0,   1,  0,
-        ]);
-      default:
-        return null; // No filter for 'original'
+  /// Uploads all images that haven't been uploaded yet.
+  Future<void> _ensureUploaded() async {
+    for (int i = 0; i < _pages.length; i++) {
+      if (_docIds[i] == null) {
+        setState(() {
+          _progressText = 'Uploading page ${i + 1}...';
+        });
+        final doc = await _documentService.uploadDocument(File(_pages[i]));
+        _docIds[i] = doc['id'];
+      }
     }
+    _isUploaded = true;
   }
 
-  Future<void> _processBatch() async {
+  /// Applies the selected filter to all uploaded images via the backend.
+  Future<void> _applyFilterToAll(String filter) async {
+    if (filter == _selectedFilter) return;
+
     setState(() {
-      _isProcessing = true;
-      _progressText = 'Starting batch process...';
+      _selectedFilter = filter;
     });
 
+    // Original = show local files, no server call
+    if (filter == 'original') {
+      setState(() {
+        _filteredUrls = List.filled(_pages.length, null);
+      });
+      return;
+    }
+
+    setState(() => _isApplyingFilter = true);
+
     try {
-      List<int> documentIds = [];
+      // Make sure all images are uploaded first
+      await _ensureUploaded();
+
+      final baseUrl = AppConstants.baseUrl.replaceAll("/api/v1", "");
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
 
       for (int i = 0; i < _pages.length; i++) {
         setState(() {
-          _progressText = 'Uploading page ${i + 1} of ${_pages.length}...';
+          _progressText = 'Applying ${_getFilterLabel(filter)} to page ${i + 1}...';
         });
 
-        final doc = await _documentService.uploadDocument(File(_pages[i]));
-        final docId = doc['id'];
+        final result = await _scannerService.enhanceImage(
+          _docIds[i]!,
+          filter,
+          documentType: "typed",
+        );
 
-        if (_selectedFilter != 'original') {
-          setState(() {
-            _progressText = 'Applying ${_getFilterLabel(_selectedFilter)} to page ${i + 1}...';
-          });
-          await _scannerService.enhanceImage(docId, _selectedFilter, documentType: "typed");
+        _filteredUrls[i] = '$baseUrl${result['url']}?t=$timestamp';
+      }
+
+      setState(() => _isApplyingFilter = false);
+    } catch (e) {
+      debugPrint("Filter error: $e");
+      if (mounted) {
+        setState(() => _isApplyingFilter = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Filter failed: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Generates the final PDF from the (already uploaded/filtered) documents.
+  Future<void> _processBatch() async {
+    setState(() {
+      _isProcessing = true;
+      _progressText = 'Preparing...';
+    });
+
+    try {
+      // Upload any remaining un-uploaded images
+      await _ensureUploaded();
+
+      // If a filter is selected and not yet applied, apply it
+      if (_selectedFilter != 'original') {
+        for (int i = 0; i < _pages.length; i++) {
+          if (_filteredUrls[i] == null) {
+            setState(() {
+              _progressText = 'Applying ${_getFilterLabel(_selectedFilter)} to page ${i + 1}...';
+            });
+            await _scannerService.enhanceImage(
+              _docIds[i]!,
+              _selectedFilter,
+              documentType: "typed",
+            );
+          }
         }
-
-        documentIds.add(docId);
       }
 
       setState(() {
         _progressText = 'Generating multi-page PDF...';
       });
 
+      final documentIds = _docIds.whereType<int>().toList();
       final pdfResult = await _documentService.generateBatchPdf(documentIds);
 
       if (mounted) {
@@ -147,7 +194,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
             duration: const Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context, true); // true = success, go back to home
+        Navigator.pop(context, true);
       }
     } catch (e) {
       debugPrint("Batch error: $e");
@@ -175,7 +222,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
-          // Return the updated list so CameraScreen can sync its count
           Navigator.pop(context, _pages);
         }
       },
@@ -184,7 +230,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         appBar: AppBar(
           title: Text("${_pages.length} Pages"),
           actions: [
-            if (!_isProcessing)
+            if (!_isProcessing && !_isApplyingFilter)
               TextButton.icon(
                 onPressed: _processBatch,
                 icon: const Icon(Icons.picture_as_pdf, color: Colors.green),
@@ -215,8 +261,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   }
 
   Widget _buildContent() {
-    final previewFilter = _getPreviewFilter();
-
     return Column(
       children: [
         // Page counter
@@ -230,90 +274,126 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
 
         // Page viewer
         Expanded(
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: _pages.length,
-            onPageChanged: (index) => setState(() => _currentPage = index),
-            itemBuilder: (context, index) {
-              Widget imageWidget = Image.file(
-                File(_pages[index]),
-                fit: BoxFit.contain,
-                width: double.infinity,
-              );
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                itemCount: _pages.length,
+                onPageChanged: (index) => setState(() => _currentPage = index),
+                itemBuilder: (context, index) {
+                  // Show filtered server image if available, otherwise local file
+                  final serverUrl = _filteredUrls[index];
 
-              // Apply client-side color filter for preview
-              if (previewFilter != null) {
-                imageWidget = ColorFiltered(
-                  colorFilter: previewFilter,
-                  child: imageWidget,
-                );
-              }
+                  Widget imageWidget;
+                  if (serverUrl != null) {
+                    imageWidget = Image.network(
+                      serverUrl,
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(child: CircularProgressIndicator());
+                      },
+                      errorBuilder: (context, error, stackTrace) => Image.file(
+                        File(_pages[index]),
+                        fit: BoxFit.contain,
+                        width: double.infinity,
+                      ),
+                    );
+                  } else {
+                    imageWidget = Image.file(
+                      File(_pages[index]),
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                    );
+                  }
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: Stack(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white24),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 12),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: imageWidget,
-                      ),
-                    ),
-                    // Top-right: Delete page
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: CircleAvatar(
-                        backgroundColor: Colors.black87,
-                        radius: 18,
-                        child: IconButton(
-                          icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
-                          padding: EdgeInsets.zero,
-                          onPressed: () => _removePage(index),
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    child: Stack(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white24),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 12),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: imageWidget,
+                          ),
                         ),
-                      ),
-                    ),
-                    // Top-left: Crop page
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: CircleAvatar(
-                        backgroundColor: Colors.black87,
-                        radius: 18,
-                        child: IconButton(
-                          icon: const Icon(Icons.crop, size: 18, color: Colors.white),
-                          padding: EdgeInsets.zero,
-                          onPressed: () => _cropPage(index),
+                        // Delete
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: CircleAvatar(
+                            backgroundColor: Colors.black87,
+                            radius: 18,
+                            child: IconButton(
+                              icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                              padding: EdgeInsets.zero,
+                              onPressed: () => _removePage(index),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    // Page number badge
-                    Positioned(
-                      bottom: 12,
-                      left: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black87,
-                          borderRadius: BorderRadius.circular(12),
+                        // Crop
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: CircleAvatar(
+                            backgroundColor: Colors.black87,
+                            radius: 18,
+                            child: IconButton(
+                              icon: const Icon(Icons.crop, size: 18, color: Colors.white),
+                              padding: EdgeInsets.zero,
+                              onPressed: () => _cropPage(index),
+                            ),
+                          ),
                         ),
-                        child: Text(
-                          "Page ${index + 1}",
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        // Page badge
+                        Positioned(
+                          bottom: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              "Page ${index + 1}",
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  );
+                },
+              ),
+
+              // Filter loading overlay
+              if (_isApplyingFilter)
+                Container(
+                  color: Colors.black54,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text(
+                          _progressText,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              );
-            },
+            ],
           ),
         ),
 
@@ -379,7 +459,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   Widget _buildFilterChip(String id, String label, IconData icon) {
     final isSelected = _selectedFilter == id;
     return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = id),
+      onTap: _isApplyingFilter ? null : () => _applyFilterToAll(id),
       child: Container(
         width: 90,
         margin: const EdgeInsets.only(right: 10),
