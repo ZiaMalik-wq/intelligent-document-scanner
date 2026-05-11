@@ -108,6 +108,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  bool _isPdfDoc(dynamic doc) {
+    final mimeType = (doc['mime_type'] ?? '').toString();
+    final filename = (doc['filename'] ?? '').toString();
+    return mimeType.contains('pdf') || filename.endsWith('.pdf');
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context);
@@ -252,14 +258,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(
                       child: ClipRRect(
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          errorBuilder: (context, error, stackTrace) => const Center(
-                            child: Icon(Icons.broken_image, color: Colors.white24),
-                          ),
-                        ),
+                        child: _isPdfDoc(doc)
+                            ? Container(
+                                color: AppTheme.surfaceColor,
+                                child: const Center(
+                                  child: Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 48),
+                                ),
+                              )
+                            : Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                errorBuilder: (context, error, stackTrace) => const Center(
+                                  child: Icon(Icons.broken_image, color: Colors.white24),
+                                ),
+                              ),
                       ),
                     ),
                     Padding(

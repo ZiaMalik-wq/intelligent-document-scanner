@@ -55,8 +55,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
     });
   }
 
-  /// Opens the ImagePreviewScreen for the given page so the user can crop it.
-  /// The cropped image path replaces the original path in the list.
   Future<void> _cropPage(int index) async {
     final result = await Navigator.push(
       context,
@@ -64,15 +62,46 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         builder: (_) => ImagePreviewScreen(
           imagePath: _pages[index],
           enableAutoCrop: true,
-          returnCroppedPath: true, // We'll add this flag
+          returnCroppedPath: true,
         ),
       ),
     );
-    // If ImagePreviewScreen returns a path, use it
     if (result != null && result is String) {
       setState(() {
         _pages[index] = result;
       });
+    }
+  }
+
+  /// Returns a ColorFilter matrix for client-side preview of the selected filter.
+  ColorFilter? _getPreviewFilter() {
+    switch (_selectedFilter) {
+      case 'bw':
+        // High-contrast B&W: desaturate then increase contrast
+        return const ColorFilter.matrix(<double>[
+          0.5, 0.5, 0.5, 0, -60,
+          0.5, 0.5, 0.5, 0, -60,
+          0.5, 0.5, 0.5, 0, -60,
+          0,   0,   0,   1,   0,
+        ]);
+      case 'grayscale':
+        // Standard grayscale using luminance weights
+        return const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0,      0,      0,      1, 0,
+        ]);
+      case 'magic':
+        // Boost contrast and saturation slightly
+        return const ColorFilter.matrix(<double>[
+          1.3, -0.1, -0.1, 0, 10,
+         -0.1,  1.3, -0.1, 0, 10,
+         -0.1, -0.1,  1.3, 0, 10,
+          0,    0,     0,   1,  0,
+        ]);
+      default:
+        return null; // No filter for 'original'
     }
   }
 
@@ -86,7 +115,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
       List<int> documentIds = [];
 
       for (int i = 0; i < _pages.length; i++) {
-        // Upload
         setState(() {
           _progressText = 'Uploading page ${i + 1} of ${_pages.length}...';
         });
@@ -94,7 +122,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         final doc = await _documentService.uploadDocument(File(_pages[i]));
         final docId = doc['id'];
 
-        // Apply filter if not original
         if (_selectedFilter != 'original') {
           setState(() {
             _progressText = 'Applying ${_getFilterLabel(_selectedFilter)} to page ${i + 1}...';
@@ -105,7 +132,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         documentIds.add(docId);
       }
 
-      // Generate PDF
       setState(() {
         _progressText = 'Generating multi-page PDF...';
       });
@@ -114,7 +140,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
 
       if (mounted) {
         setState(() => _isProcessing = false);
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("PDF saved: ${pdfResult['filename']}"),
@@ -122,7 +147,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
             duration: const Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context, true);
+        Navigator.pop(context, true); // true = success, go back to home
       }
     } catch (e) {
       debugPrint("Batch error: $e");
@@ -146,20 +171,29 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: Text("${_pages.length} Pages"),
-        actions: [
-          if (!_isProcessing)
-            TextButton.icon(
-              onPressed: _processBatch,
-              icon: const Icon(Icons.picture_as_pdf, color: Colors.green),
-              label: const Text("Save PDF", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-            ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          // Return the updated list so CameraScreen can sync its count
+          Navigator.pop(context, _pages);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.backgroundColor,
+        appBar: AppBar(
+          title: Text("${_pages.length} Pages"),
+          actions: [
+            if (!_isProcessing)
+              TextButton.icon(
+                onPressed: _processBatch,
+                icon: const Icon(Icons.picture_as_pdf, color: Colors.green),
+                label: const Text("Save PDF", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ),
+        body: _isProcessing ? _buildProgressOverlay() : _buildContent(),
       ),
-      body: _isProcessing ? _buildProgressOverlay() : _buildContent(),
     );
   }
 
@@ -181,6 +215,8 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   }
 
   Widget _buildContent() {
+    final previewFilter = _getPreviewFilter();
+
     return Column(
       children: [
         // Page counter
@@ -199,6 +235,20 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
             itemCount: _pages.length,
             onPageChanged: (index) => setState(() => _currentPage = index),
             itemBuilder: (context, index) {
+              Widget imageWidget = Image.file(
+                File(_pages[index]),
+                fit: BoxFit.contain,
+                width: double.infinity,
+              );
+
+              // Apply client-side color filter for preview
+              if (previewFilter != null) {
+                imageWidget = ColorFiltered(
+                  colorFilter: previewFilter,
+                  child: imageWidget,
+                );
+              }
+
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 child: Stack(
@@ -213,14 +263,10 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.file(
-                          File(_pages[index]),
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                        ),
+                        child: imageWidget,
                       ),
                     ),
-                    // Top-right: Delete page button
+                    // Top-right: Delete page
                     Positioned(
                       top: 8,
                       right: 8,
@@ -234,7 +280,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                         ),
                       ),
                     ),
-                    // Top-left: Crop page button
+                    // Top-left: Crop page
                     Positioned(
                       top: 8,
                       left: 8,
@@ -271,25 +317,26 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
           ),
         ),
 
-        // Page dots indicator
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              _pages.length,
-              (index) => Container(
-                width: _currentPage == index ? 10 : 6,
-                height: _currentPage == index ? 10 : 6,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _currentPage == index ? AppTheme.primaryColor : Colors.white30,
+        // Page dots
+        if (_pages.length > 1)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _pages.length,
+                (index) => Container(
+                  width: _currentPage == index ? 10 : 6,
+                  height: _currentPage == index ? 10 : 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _currentPage == index ? AppTheme.primaryColor : Colors.white30,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
 
         // Filter bar
         Container(
@@ -306,10 +353,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                   Text(
                     _getFilterLabel(_selectedFilter),
                     style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                  const Text(
-                    "  (applied on export)",
-                    style: TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
                   ),
                 ],
               ),

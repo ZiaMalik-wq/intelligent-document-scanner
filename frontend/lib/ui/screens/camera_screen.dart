@@ -17,31 +17,31 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
   bool _isBatchMode = false;
   final List<String> _capturedImages = [];
+  late CameraProvider _cameraProvider;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<CameraProvider>(context, listen: false).reinitialize();
+      _cameraProvider = Provider.of<CameraProvider>(context, listen: false);
+      _cameraProvider.reinitialize();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // Dispose the camera when leaving this screen
-    Provider.of<CameraProvider>(context, listen: false).disposeCamera();
+    _cameraProvider.disposeCamera();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final camera = Provider.of<CameraProvider>(context, listen: false);
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
-      camera.disposeCamera();
+      _cameraProvider.disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
-      camera.reinitialize();
+      _cameraProvider.reinitialize();
     }
   }
 
@@ -244,12 +244,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                         context,
                                         MaterialPageRoute(
                                           builder: (_) => BatchPreviewScreen(
-                                            imagePaths: _capturedImages,
+                                            imagePaths: List.from(_capturedImages),
                                           ),
                                         ),
                                       );
                                       if (result == true) {
                                         if (context.mounted) Navigator.pop(context);
+                                      } else if (result is List) {
+                                        // User pressed back — update the list with remaining pages
+                                        setState(() {
+                                          _capturedImages.clear();
+                                          _capturedImages.addAll(result.cast<String>());
+                                        });
                                       }
                                     }
                                   },

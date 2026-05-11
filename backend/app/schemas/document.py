@@ -18,6 +18,7 @@ class DocumentInDBBase(DocumentBase):
     id: int
     user_id: int
     original_path: str
+    mime_type: Optional[str] = None
     base_processed_path: Optional[str] = None  # Perspective-corrected base image
     processed_path: Optional[str] = None  # Current image (may have filters applied)
     parent_document_id: Optional[int] = None  # For cropped images
