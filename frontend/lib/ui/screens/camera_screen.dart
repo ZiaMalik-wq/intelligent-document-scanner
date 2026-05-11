@@ -204,7 +204,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                   MaterialPageRoute(
                                     builder: (_) => ImagePreviewScreen(
                                       imagePath: file.path,
-                                      enableAutoCrop: true,
+                                      enableAutoCrop: false,
                                     ),
                                   ),
                                 );
