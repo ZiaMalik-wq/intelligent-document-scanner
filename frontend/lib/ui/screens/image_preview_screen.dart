@@ -9,11 +9,13 @@ import 'package:doc_scanner/core/constants.dart';
 class ImagePreviewScreen extends StatefulWidget {
   final String imagePath;
   final bool enableAutoCrop;
+  final bool returnCroppedPath;
 
   const ImagePreviewScreen({
     super.key,
     required this.imagePath,
     this.enableAutoCrop = false,
+    this.returnCroppedPath = false,
   });
 
   @override
@@ -212,6 +214,14 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
     );
 
     if (croppedFile != null) {
+      // If in batch mode (returnCroppedPath), just pop with the cropped file path
+      if (widget.returnCroppedPath) {
+        if (mounted) {
+          Navigator.pop(context, croppedFile.path);
+        }
+        return;
+      }
+
       // If this is the first crop (no document uploaded yet), upload the original image as parent
       if (_documentId == null && _parentDocumentId == null) {
         try {

@@ -255,7 +255,8 @@ async def generate_batch_pdf_endpoint(
     request: BatchPdfRequest,
 ) -> Any:
     """
-    Generate and download a single multi-page PDF from a list of document IDs.
+    Generate a single multi-page PDF from a list of document IDs.
+    Creates a new Document record for the PDF and removes the individual source documents.
     """
     if not request.document_ids:
         raise HTTPException(status_code=400, detail="No document IDs provided")
@@ -265,17 +266,16 @@ async def generate_batch_pdf_endpoint(
         Document.user_id == current_user.id
     ).all()
     
-    if not documents or len(documents) != len(request.document_ids):
-        raise HTTPException(status_code=404, detail="One or more documents not found")
+    if not documents:
+        raise HTTPException(status_code=404, detail="Documents not found")
         
     # Order documents based on the input list order
     doc_dict = {doc.id: doc for doc in documents}
     ordered_docs = [doc_dict[doc_id] for doc_id in request.document_ids if doc_id in doc_dict]
     
-    # Collect paths
+    # Collect paths (use processed if available, otherwise original)
     image_paths = []
     for doc in ordered_docs:
-        # Use the best available version (processed/enhanced)
         path = doc.processed_path if doc.processed_path else doc.original_path
         if os.path.exists(path):
             image_paths.append(path)
@@ -288,11 +288,43 @@ async def generate_batch_pdf_endpoint(
 
     try:
         generate_batch_pdf(image_paths, pdf_path)
+        
+        # Create a Document record for the PDF so it appears in the gallery
+        pdf_doc = Document(
+            user_id=current_user.id,
+            filename=f"Batch_{len(image_paths)}_pages.pdf",
+            mime_type="application/pdf",
+            original_path=pdf_path,
+            processed_path=pdf_path,
+            status="completed"
+        )
+        db.add(pdf_doc)
+        
+        # Delete the individual source documents (they were temporary)
+        for doc in ordered_docs:
+            # Remove physical files
+            if doc.original_path and os.path.exists(doc.original_path):
+                try:
+                    os.remove(doc.original_path)
+                except Exception:
+                    pass
+            if doc.processed_path and doc.processed_path != doc.original_path and os.path.exists(doc.processed_path):
+                try:
+                    os.remove(doc.processed_path)
+                except Exception:
+                    pass
+            db.delete(doc)
+        
+        db.commit()
+        db.refresh(pdf_doc)
+        
         return {
+            "id": pdf_doc.id,
             "url": f"/media/processed/{pdf_filename}",
-            "filename": pdf_filename
+            "filename": pdf_doc.filename
         }
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate batch PDF: {e}"

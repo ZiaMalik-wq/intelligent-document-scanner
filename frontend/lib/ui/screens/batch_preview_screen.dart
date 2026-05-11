@@ -4,6 +4,7 @@ import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/services/document_service.dart';
 import 'package:doc_scanner/core/constants.dart';
 import 'package:doc_scanner/services/scanner_service.dart';
+import 'package:doc_scanner/ui/screens/image_preview_screen.dart';
 
 class BatchPreviewScreen extends StatefulWidget {
   final List<String> imagePaths;
@@ -55,6 +56,27 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
     });
   }
 
+  /// Opens the ImagePreviewScreen for the given page so the user can crop it.
+  /// The cropped image path replaces the original path in the list.
+  Future<void> _cropPage(int index) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImagePreviewScreen(
+          imagePath: _pages[index],
+          enableAutoCrop: true,
+          returnCroppedPath: true, // We'll add this flag
+        ),
+      ),
+    );
+    // If ImagePreviewScreen returns a path, use it
+    if (result != null && result is String) {
+      setState(() {
+        _pages[index] = result;
+      });
+    }
+  }
+
   Future<void> _processBatch() async {
     setState(() {
       _isProcessing = true;
@@ -76,7 +98,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         // Apply filter if not original
         if (_selectedFilter != 'original') {
           setState(() {
-            _progressText = 'Applying filter to page ${i + 1}...';
+            _progressText = 'Applying ${_getFilterLabel(_selectedFilter)} to page ${i + 1}...';
           });
           await _scannerService.enhanceImage(docId, _selectedFilter, documentType: "typed");
         }
@@ -96,7 +118,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("PDF ready: ${pdfResult['filename']}"),
+            content: Text("PDF saved: ${pdfResult['filename']}"),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 4),
           ),
@@ -111,6 +133,15 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
           SnackBar(content: Text("Failed: $e"), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  String _getFilterLabel(String id) {
+    switch (id) {
+      case 'magic': return 'Magic Color';
+      case 'bw': return 'B&W';
+      case 'grayscale': return 'Grayscale';
+      default: return 'Original';
     }
   }
 
@@ -190,7 +221,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                         ),
                       ),
                     ),
-                    // Delete page button
+                    // Top-right: Delete page button
                     Positioned(
                       top: 8,
                       right: 8,
@@ -201,6 +232,20 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
                           icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
                           padding: EdgeInsets.zero,
                           onPressed: () => _removePage(index),
+                        ),
+                      ),
+                    ),
+                    // Top-left: Crop page button
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black87,
+                        radius: 18,
+                        child: IconButton(
+                          icon: const Icon(Icons.crop, size: 18, color: Colors.white),
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _cropPage(index),
                         ),
                       ),
                     ),
@@ -253,9 +298,21 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "Apply to all pages:",
-                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+              Row(
+                children: [
+                  const Text(
+                    "Filter: ",
+                    style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  Text(
+                    _getFilterLabel(_selectedFilter),
+                    style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  const Text(
+                    "  (applied on export)",
+                    style: TextStyle(color: Colors.white38, fontSize: 11, fontStyle: FontStyle.italic),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               SizedBox(
