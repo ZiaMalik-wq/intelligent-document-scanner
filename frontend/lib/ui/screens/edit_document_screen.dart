@@ -33,10 +33,22 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
   }
 
   void _applyFilter(String filter) async {
+    if (filter == _selectedFilter) return;
+
     setState(() {
       _selectedFilter = filter;
       _isProcessing = true;
     });
+
+    // If user picks "original", just restore the initial image — no network call needed
+    if (filter == 'original') {
+      setState(() {
+        _currentImageUrl = widget.initialImageUrl;
+        _isProcessing = false;
+        _hasUnsavedChanges = false;
+      });
+      return;
+    }
 
     try {
       final result = await _scannerService.enhanceImage(
@@ -45,8 +57,10 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
         documentType: _selectedDocumentType,
       );
 
+      // Append a cache-busting timestamp so Flutter doesn't serve the old cached image
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       setState(() {
-        _currentImageUrl = '${AppConstants.baseUrl.replaceAll("/api/v1", "")}${result['url']}';
+        _currentImageUrl = '${AppConstants.baseUrl.replaceAll("/api/v1", "")}${result['url']}?t=$timestamp';
         _isProcessing = false;
         _hasUnsavedChanges = true;
       });
