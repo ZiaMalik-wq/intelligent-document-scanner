@@ -66,4 +66,24 @@ class ScannerService {
       throw Exception('Failed to correct perspective: ${response.body}');
     }
   }
+
+  Future<Map<String, dynamic>> extractText(
+    int documentId, {
+    String lang = "eng",
+    String engine = "tesseract",
+  }) async {
+    final token = await _getToken();
+    final response = await http.post(
+      Uri.parse(
+        '${AppConstants.baseUrl}/ocr/extract/$documentId?lang=$lang&engine=$engine',
+      ),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to extract text: ${response.body}');
+    }
+  }
 }
