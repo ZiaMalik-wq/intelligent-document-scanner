@@ -51,6 +51,7 @@ dependencies:
   open_filex: ^4.7.0
   image_cropper: ^12.2.1
   http_parser: ^4.1.0
+  syncfusion_flutter_pdfviewer: ^33.2.5
 
 dev_dependencies:
   flutter_test:

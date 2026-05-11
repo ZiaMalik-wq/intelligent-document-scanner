@@ -5,9 +5,8 @@ import 'package:doc_scanner/services/document_service.dart';
 import 'package:doc_scanner/services/scanner_service.dart';
 import 'package:doc_scanner/ui/screens/edit_document_screen.dart';
 import 'package:doc_scanner/ui/screens/ocr_result_screen.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 class DocumentDetailScreen extends StatelessWidget {
@@ -100,37 +99,6 @@ class DocumentDetailScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _openPdf(BuildContext context) async {
-    // Download the PDF to a temp file and open with system viewer
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final response = await http.get(Uri.parse(imageUrl));
-      if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final filename = document['filename'] ?? 'batch.pdf';
-        final file = File('${dir.path}/$filename');
-        await file.writeAsBytes(response.bodyBytes);
-        
-        if (context.mounted) Navigator.pop(context); // close loading
-        
-        await OpenFilex.open(file.path);
-      } else {
-        throw Exception('Failed to download PDF');
-      }
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context); // close loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to open PDF: $e"), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,36 +156,10 @@ class DocumentDetailScreen extends StatelessWidget {
   }
 
   Widget _buildPdfView(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 100),
-          const SizedBox(height: 24),
-          Text(
-            document['filename'] ?? 'PDF Document',
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            "PDF Document",
-            style: TextStyle(color: Colors.white54, fontSize: 14),
-          ),
-          const SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () => _openPdf(context),
-            icon: const Icon(Icons.open_in_new),
-            label: const Text("Open PDF"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
+    return SfPdfViewer.network(
+      imageUrl,
+      canShowScrollHead: false,
+      canShowScrollStatus: false,
     );
   }
 }

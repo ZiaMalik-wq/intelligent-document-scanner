@@ -15,9 +15,20 @@ class OcrResultScreen extends StatelessWidget {
   void _copyToClipboard(BuildContext context) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Text copied to clipboard"),
-        backgroundColor: Colors.green,
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 12),
+            Text("Text copied to clipboard!"),
+          ],
+        ),
+        backgroundColor: AppTheme.primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.only(bottom: 80, left: 24, right: 24),
       ),
     );
   }
