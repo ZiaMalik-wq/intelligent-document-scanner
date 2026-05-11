@@ -160,6 +160,61 @@ async def upload_document(
     
     return document_data
 
+@router.post("/{document_id}/image", response_model=DocumentSchema)
+async def update_document_image(
+    document_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Replace the original image of an existing document. Used for manual cropping in edit mode.
+    """
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.user_id == current_user.id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_ext = os.path.splitext(file.filename)[1]
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
+
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not save file: {e}"
+        )
+
+    # Delete old files to save space
+    if document.original_path and os.path.exists(document.original_path):
+        try: os.remove(document.original_path)
+        except: pass
+    if document.base_processed_path and os.path.exists(document.base_processed_path):
+        try: os.remove(document.base_processed_path)
+        except: pass
+    if document.processed_path and os.path.exists(document.processed_path):
+        try: os.remove(document.processed_path)
+        except: pass
+
+    # Update DB record
+    document.original_path = file_path
+    document.base_processed_path = None
+    document.processed_path = None
+    document.status = "uploaded"
+    
+    db.commit()
+    db.refresh(document)
+    
+    doc_data = DocumentSchema.model_validate(document).model_dump()
+    doc_data["url"] = f"/media/uploads/{unique_filename}"
+    return doc_data
+
 @router.get("/{id}", response_model=DocumentSchema)
 def get_document(
     *,

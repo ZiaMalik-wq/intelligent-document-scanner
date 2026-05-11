@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/services/scanner_service.dart';
+import 'package:doc_scanner/services/document_service.dart';
 import 'package:doc_scanner/core/constants.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'dart:io';
 
 class EditDocumentScreen extends StatefulWidget {
   final Map<String, dynamic> document;
@@ -23,7 +28,9 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
   String _selectedDocumentType = 'typed';
   String? _currentImageUrl;
   bool _hasUnsavedChanges = false;
+  String _progressText = '';
   final _scannerService = ScannerService();
+  final _documentService = DocumentService();
 
   @override
   void initState() {
@@ -103,6 +110,63 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
     );
   }
 
+  Future<void> _cropImage() async {
+    if (_isProcessing) return;
+
+    setState(() => _isProcessing = true);
+    
+    try {
+      // Download current image to temp file
+      final response = await http.get(Uri.parse(_currentImageUrl!));
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/temp_crop_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await tempFile.writeAsBytes(response.bodyBytes);
+
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: tempFile.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Document',
+            toolbarColor: AppTheme.surfaceColor,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+            activeControlsWidgetColor: AppTheme.primaryColor,
+          ),
+          IOSUiSettings(title: 'Crop Document'),
+        ],
+      );
+
+      if (croppedFile != null) {
+        setState(() => _progressText = "Saving crop...");
+        
+        final docId = widget.document['id'];
+        final updatedDoc = await _documentService.updateDocumentImage(docId, File(croppedFile.path));
+        
+        // Use the new original URL returned from the server, but we usually want to re-apply the filter.
+        // Or simply reset to 'original' filter view
+        setState(() {
+          _currentImageUrl = '${AppConstants.baseUrl.replaceAll("/api/v1", "")}${updatedDoc['url']}';
+          _selectedFilter = 'original';
+          _hasUnsavedChanges = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Crop failed: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _progressText = '';
+        });
+      }
+    }
+  }
+
   void _saveAndClose() {
     // The backend already saved the filtered image in the DB during enhanceImage.
     // We just need to pop and return true so the previous screen refreshes.
@@ -128,6 +192,11 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
         appBar: AppBar(
           title: const Text("Edit Document"),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.crop, color: Colors.white),
+              tooltip: 'Crop',
+              onPressed: _cropImage,
+            ),
             if (_hasUnsavedChanges)
               IconButton(
                 icon: const Icon(Icons.check, color: Colors.green),
@@ -167,7 +236,18 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                       if (_isProcessing)
                         Container(
                           color: Colors.black45,
-                          child: const Center(child: CircularProgressIndicator()),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const CircularProgressIndicator(),
+                                if (_progressText.isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  Text(_progressText, style: const TextStyle(color: Colors.white)),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
                     ],
                   ),
