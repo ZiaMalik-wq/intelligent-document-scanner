@@ -30,40 +30,23 @@ class ScannerService {
     }
   }
 
-  Future<Map<String, dynamic>> detectEdges(int documentId) async {
+  Future<Map<String, dynamic>> extractText(
+    int documentId, {
+    String lang = "eng",
+    String engine = "auto",
+  }) async {
     final token = await _getToken();
     final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/scanner/detect-edges/$documentId'),
+      Uri.parse(
+        '${AppConstants.baseUrl}/ocr/extract/$documentId?lang=$lang&engine=$engine',
+      ),
       headers: {'Authorization': 'Bearer $token'},
     );
 
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
-      throw Exception('Failed to detect edges');
-    }
-  }
-
-  Future<Map<String, dynamic>> correctPerspective(
-    int documentId,
-    List<dynamic> corners,
-  ) async {
-    final token = await _getToken();
-    final response = await http.post(
-      Uri.parse(
-        '${AppConstants.baseUrl}/scanner/correct-perspective/$documentId',
-      ),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({'corners': corners}),
-    );
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Failed to correct perspective: ${response.body}');
+      throw Exception('Failed to extract text: ${response.body}');
     }
   }
 }
