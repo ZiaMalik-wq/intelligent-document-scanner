@@ -296,32 +296,103 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Widget _buildOverlay(BuildContext context) {
-    return ColorFiltered(
-      colorFilter: ColorFilter.mode(
-        Colors.black.withValues(alpha: 0.5),
-        BlendMode.srcOut,
-      ),
-      child: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              color: Colors.black,
-              backgroundBlendMode: BlendMode.dstOut,
-            ),
+    final height = MediaQuery.of(context).size.height * 0.6;
+    final width = MediaQuery.of(context).size.width * 0.85;
+
+    return Stack(
+      children: [
+        // Darkened background with cutout
+        ColorFiltered(
+          colorFilter: ColorFilter.mode(
+            Colors.black.withValues(alpha: 0.5),
+            BlendMode.srcOut,
           ),
-          Align(
-            alignment: Alignment.center,
-            child: Container(
-              height: MediaQuery.of(context).size.height * 0.6,
-              width: MediaQuery.of(context).size.width * 0.85,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              Container(
+                decoration: const BoxDecoration(
+                  color: Colors.black,
+                  backgroundBlendMode: BlendMode.dstOut,
+                ),
               ),
+              Align(
+                alignment: Alignment.center,
+                child: Container(
+                  height: height,
+                  width: width,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Grid Overlay
+        Align(
+          alignment: Alignment.center,
+          child: SizedBox(
+            height: height,
+            width: width,
+            child: CustomPaint(
+              painter: _GridPainter(),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
+}
+
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..strokeWidth = 1.0;
+
+    // Draw vertical lines
+    final double colWidth = size.width / 3;
+    canvas.drawLine(Offset(colWidth, 0), Offset(colWidth, size.height), paint);
+    canvas.drawLine(Offset(colWidth * 2, 0), Offset(colWidth * 2, size.height), paint);
+
+    // Draw horizontal lines
+    final double rowHeight = size.height / 3;
+    canvas.drawLine(Offset(0, rowHeight), Offset(size.width, rowHeight), paint);
+    canvas.drawLine(Offset(0, rowHeight * 2), Offset(size.width, rowHeight * 2), paint);
+    
+    // Draw corner brackets
+    final cornerPaint = Paint()
+      ..color = AppTheme.primaryColor
+      ..strokeWidth = 4.0
+      ..style = PaintingStyle.stroke;
+      
+    const double length = 30;
+    
+    // Top Left
+    canvas.drawPath(
+      Path()..moveTo(0, length)..lineTo(0, 0)..lineTo(length, 0),
+      cornerPaint,
+    );
+    // Top Right
+    canvas.drawPath(
+      Path()..moveTo(size.width - length, 0)..lineTo(size.width, 0)..lineTo(size.width, length),
+      cornerPaint,
+    );
+    // Bottom Left
+    canvas.drawPath(
+      Path()..moveTo(0, size.height - length)..lineTo(0, size.height)..lineTo(length, size.height),
+      cornerPaint,
+    );
+    // Bottom Right
+    canvas.drawPath(
+      Path()..moveTo(size.width - length, size.height)..lineTo(size.width, size.height)..lineTo(size.width, size.height - length),
+      cornerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

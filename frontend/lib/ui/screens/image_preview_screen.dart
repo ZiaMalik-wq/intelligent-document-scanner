@@ -287,12 +287,36 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
 
   void _saveAndClose() {
     _hasUnsavedChanges = false; // Mark as saved
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Document saved successfully"),
-        backgroundColor: Colors.green,
-      ),
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceColor,
+          title: const Text('Document Saved!', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'Your document has been processed and saved successfully.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).popUntil((route) => route.isFirst); // Go to Home
+              },
+              child: const Text('Go Home', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to Camera
+              },
+              child: const Text('Scan Another', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
   }
 

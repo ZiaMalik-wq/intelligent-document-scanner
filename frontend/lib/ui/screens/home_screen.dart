@@ -7,6 +7,8 @@ import 'package:doc_scanner/services/document_service.dart';
 import 'package:doc_scanner/core/theme.dart';
 import 'package:doc_scanner/core/constants.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -217,16 +219,31 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.folder_open_outlined, size: 80, color: Colors.white24),
-          const SizedBox(height: 16),
-          Text(
-            "Welcome, ${auth.user?.name ?? 'User'}",
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  blurRadius: 40,
+                  spreadRadius: 10,
+                ),
+              ],
+            ),
+            child: const Icon(Icons.document_scanner_rounded, size: 64, color: AppTheme.primaryColor),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 32),
+          Text(
+            "Welcome, ${auth.user?.name?.split(' ')[0] ?? 'User'}!",
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          const SizedBox(height: 12),
           const Text(
-            "Your scanned documents will appear here.",
-            style: TextStyle(color: Colors.white70),
+            "You haven't scanned any documents yet.\nTap the camera to get started.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white54, fontSize: 16, height: 1.5),
           ),
         ],
       ),
@@ -234,24 +251,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDocumentGrid() {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+    return AnimationLimiter(
+      child: MasonryGridView.count(
+        padding: const EdgeInsets.all(16),
         crossAxisCount: 2,
-        childAspectRatio: 0.75,
-        crossAxisSpacing: 16,
         mainAxisSpacing: 16,
-      ),
-      itemCount: _documents.length,
-      itemBuilder: (context, index) {
-        final doc = _documents[index];
-        final date = DateTime.parse(doc['created_at']);
-        final formattedDate = DateFormat.yMMMd().format(date);
-        final imageUrl = '${AppConstants.baseUrl.replaceAll("/api/v1", "")}${doc['url']}';
+        crossAxisSpacing: 16,
+        itemCount: _documents.length,
+        itemBuilder: (context, index) {
+          final doc = _documents[index];
+          final date = DateTime.parse(doc['created_at']);
+          final formattedDate = DateFormat.yMMMd().format(date);
+          final imageUrl = '${AppConstants.baseUrl.replaceAll("/api/v1", "")}${doc['url']}';
 
-        final isSelected = _selectedIds.contains(doc['id']);
+          final isSelected = _selectedIds.contains(doc['id']);
 
-        return GestureDetector(
+          return AnimationConfiguration.staggeredGrid(
+            position: index,
+            duration: const Duration(milliseconds: 375),
+            columnCount: 2,
+            child: SlideAnimation(
+              verticalOffset: 50.0,
+              child: FadeInAnimation(
+                child: GestureDetector(
           onLongPress: () {
             setState(() {
               _isSelectionMode = true;
@@ -375,8 +397,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-        );
-      },
+        ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
