@@ -71,7 +71,7 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
       MaterialPageRoute(
         builder: (_) => ImagePreviewScreen(
           imagePath: _pages[index],
-          enableAutoCrop: true,
+          enableAutoCrop: false,
           returnCroppedPath: true,
         ),
       ),
