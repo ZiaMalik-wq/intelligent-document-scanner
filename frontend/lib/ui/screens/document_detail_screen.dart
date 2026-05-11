@@ -6,10 +6,8 @@ import 'package:doc_scanner/services/scanner_service.dart';
 import 'package:doc_scanner/ui/screens/edit_document_screen.dart';
 import 'package:doc_scanner/ui/screens/ocr_result_screen.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
-import 'package:http/http.dart' as http;
-import 'dart:io';
 
-class DocumentDetailScreen extends StatelessWidget {
+class DocumentDetailScreen extends StatefulWidget {
   final Map<String, dynamic> document;
   final String imageUrl;
 
@@ -19,9 +17,16 @@ class DocumentDetailScreen extends StatelessWidget {
     required this.imageUrl,
   });
 
+  @override
+  State<DocumentDetailScreen> createState() => _DocumentDetailScreenState();
+}
+
+class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
+  bool _hidePdf = false;
+
   bool get _isPdf =>
-      (document['mime_type'] ?? '').toString().contains('pdf') ||
-      (document['filename'] ?? '').toString().endsWith('.pdf');
+      (widget.document['mime_type'] ?? '').toString().contains('pdf') ||
+      (widget.document['filename'] ?? '').toString().endsWith('.pdf');
 
   Future<void> _deleteDocument(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -46,7 +51,7 @@ class DocumentDetailScreen extends StatelessWidget {
 
     if (confirmed == true) {
       try {
-        await DocumentService().deleteDocument(document['id']);
+        await DocumentService().deleteDocument(widget.document['id']);
         if (context.mounted) {
           Navigator.pop(context, true);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -73,18 +78,25 @@ class DocumentDetailScreen extends StatelessWidget {
     );
 
     try {
-      final result = await ScannerService().extractText(document['id']);
+      final result = await ScannerService().extractText(widget.document['id']);
       if (context.mounted) {
         Navigator.pop(context);
-        Navigator.push(
+        
+        setState(() => _hidePdf = true);
+        
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => OcrResultScreen(
               text: result['text'] ?? '',
-              filename: document['filename'] ?? 'Document',
+              filename: widget.document['filename'] ?? 'Document',
             ),
           ),
         );
+        
+        if (mounted) {
+          setState(() => _hidePdf = false);
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -106,7 +118,7 @@ class DocumentDetailScreen extends StatelessWidget {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: Text(document['filename'] ?? 'Document'),
+        title: Text(widget.document['filename'] ?? 'Document'),
         actions: [
           IconButton(
             icon: const Icon(Icons.text_fields, color: Colors.white),
@@ -122,8 +134,8 @@ class DocumentDetailScreen extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) => EditDocumentScreen(
-                      document: document,
-                      initialImageUrl: imageUrl,
+                      document: widget.document,
+                      initialImageUrl: widget.imageUrl,
                     ),
                   ),
                 );
@@ -145,7 +157,7 @@ class DocumentDetailScreen extends StatelessWidget {
   Widget _buildImageView() {
     return Center(
       child: PhotoView(
-        imageProvider: NetworkImage(imageUrl),
+        imageProvider: NetworkImage(widget.imageUrl),
         loadingBuilder: (context, event) => const Center(child: CircularProgressIndicator()),
         errorBuilder: (context, error, stackTrace) => const Center(
           child: Icon(Icons.broken_image, color: Colors.white24, size: 100),
@@ -156,8 +168,11 @@ class DocumentDetailScreen extends StatelessWidget {
   }
 
   Widget _buildPdfView(BuildContext context) {
+    if (_hidePdf) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return SfPdfViewer.network(
-      imageUrl,
+      widget.imageUrl,
       canShowScrollHead: false,
       canShowScrollStatus: false,
     );

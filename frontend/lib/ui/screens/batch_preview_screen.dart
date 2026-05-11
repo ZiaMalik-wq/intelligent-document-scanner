@@ -32,7 +32,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
   // Backend state — uploaded document IDs and their filtered URLs
   List<int?> _docIds = [];
   List<String?> _filteredUrls = []; // server URLs for filtered images
-  bool _isUploaded = false;
 
   @override
   void initState() {
@@ -97,7 +96,6 @@ class _BatchPreviewScreenState extends State<BatchPreviewScreen> {
         _docIds[i] = doc['id'];
       }
     }
-    _isUploaded = true;
   }
 
   /// Applies the selected filter to all uploaded images via the backend.

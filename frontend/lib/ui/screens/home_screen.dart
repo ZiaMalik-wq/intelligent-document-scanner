@@ -297,6 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           },
           child: Container(
+            height: index.isEven ? 260 : 220,
             decoration: BoxDecoration(
               color: isSelected ? AppTheme.primaryColor.withValues(alpha: 0.3) : AppTheme.surfaceColor,
               borderRadius: BorderRadius.circular(16),
